@@ -1,0 +1,445 @@
+---
+title: "metrica"
+author: "Prediction Performance Metrics"
+output: 
+    flexdashboard::flex_dashboard:
+        orientation: rows
+        navbar:
+           - { icon: "fa-safari", href: "https://ciampittilab.wixsite.com/ciampitti-lab", align: right }
+           - { icon: "fa-github", href: "https://github.com/adriancorrendo/metrica", align: right }
+           - { icon: "fa-twitter", href: "https://twitter.com/aacorrendo/", align: right}
+           - { icon: "fa-linkedin", href: "https://www.linkedin.com/in/adriancorrendo/", align: right}
+        theme:
+            bg: "#EDEEC9"
+            fg: "#272640"
+            primary: "#fb8f67"
+            base_font: !expr bslib::font_google("Fjalla One")
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+
+# install.packages("devtools")
+#devtools::install_github("adriancorrendo/metrica")
+
+library(metrica)
+library(shiny)
+library(flexdashboard)
+library(tidyr)
+library(purrr)
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(readxl)
+library(tools)
+
+```
+
+Regression {data-orientation=columns}
+===================================== 
+
+Column {data-width=100}
+-----------------------------------------------------------------------
+Learn more about [Regression metrics](https://adriancorrendo.github.io/metrica/articles/available_metrics_regression.html).
+
+```{r}
+# LOAD DATASETS ----
+# Data list
+data_list_reg = list("Wheat grain N" = metrica::wheat,
+                     "Barley Grain No" = metrica::barley,
+                     "Sorghum Grain No" = metrica::sorghum,
+                     "Chickpea Dry Matter" = metrica::chickpea)
+# Reactive Data
+chosen_data <- reactive({ data_list_reg %>% purrr::pluck(input$dataset_choice) })
+
+# Axis Orientation
+# Orientation list
+orientation_list = list("Predicted vs. Observed" = "PO",
+                        "Observed vs. Predicted" = "OP")
+
+# Reactive orientation
+chosen_orientation <- reactive({ orientation_list %>% purrr::pluck(input$orientation_choice) })
+
+# Metrics
+
+metrics_list = list("r","R2", "Xa","CCC","MAE","RMAE","MAPE","SMAPE", 
+                   "RAE","RSE","MBE","PBE","PAB","PPB","MSE","RMSE","RRMSE", "RSR",
+                   "iqRMSE","MLA","MLP", "RMLA", "RMLP", "SB","SDSD","LCS",
+                   "PLA", "PLP","Ue","Uc","Ub","NSE","E1","Erel","KGE","d",
+                   "d1", "d1r","RAC","AC","lambda", "dcorr", "MIC")
+
+# Reactive metrics
+chosen_metrics <- reactive( { as.list(input$metrics_choice) } )
+
+```
+
+```{r}
+# Data
+
+data_set_reg <- reactive({
+  
+  inFile <- input$file
+
+# IF DATA IS NOT LOADED, USE EXAMPLE DATASETS
+  if (is.null( inFile )) { return( data_list_reg %>% purrr::pluck(input$dataset_choice) )   }
+  
+# READING THE FILE WHEN THE USER UPLOADS A CSV / XLS / XLSX
+  if (is.element("datapath", names(input$file))) {
+    #read.csv(input$file$datapath, sep = ",", header = T)
+    extension <- tools::file_ext(inFile$name)
+      filepath <- inFile$datapath
+      data_set <- switch(extension, 
+                         csv = readr::read_csv(filepath),
+                         xls = readxl::read_xls(filepath),
+                         xlsx = readxl::read_xlsx(filepath) )
+    
+  }
+ 
+})
+
+```
+
+
+### <b><font size="5em" color="black"> Inputs </font></b>
+
+```{r inputPanel, echo=FALSE}
+sidebarPanel(
+                width = 3.5,
+                h5("Select Data"),
+                # Example datasets
+                #p("Use the example datasets:"),
+                shiny::selectInput(
+                    inputId = "dataset_choice",
+                    label   = "Choose an example dataset",
+                    choices = c("Wheat grain N", 
+                                "Barley Grain No",
+                                "Sorghum Grain No",
+                                "Chickpea Dry Matter") ),
+                # Load user data
+                p("Or upload your data:"),
+                shiny::fileInput(inputId = "file",
+                                 label = "obs = observed, pred = predicted",
+                                 multiple = FALSE, #only 1 file at a time
+                                 accept = c("text/csv",
+                                            "text/comma-separated-values,text/plain",
+                                            ".csv",
+                                            ".xls",
+                                            ".xlsx"),     
+                                 placeholder = "*.csv | *.xls | *.xlsx"),
+                tags$hr(),
+                shiny::selectInput(
+                    inputId = "orientation_choice",
+                    label   = "Choose axes-orientation",
+                    choices = c("Predicted vs. Observed", "Observed vs. Predicted")
+                ),
+                # Metrics choice
+                h5("Print Metrics"),
+                shiny::checkboxGroupInput(
+                #shinyWidgets::prettyCheckboxGroup(
+                    inputId = "metrics_choice",
+                    label   = "",
+                    choices = metrics_list,
+                    selected = c("RMSE", "R2", "MAE"),
+                   inline = TRUE
+                ),
+                tags$hr()
+                )
+
+                
+
+```
+
+Column {data-width=160}
+-----------------------------------------------------------------------
+
+### Scatter plot
+
+```{r}
+
+renderPlot({
+  
+  metrica::scatter_plot(data = data_set_reg(), 
+                        obs = obs, pred=pred, 
+                        orientation = chosen_orientation(), 
+                        print_metrics = ifelse(is.null(input$metrics_choice), FALSE, TRUE),
+                        metrics_list = chosen_metrics()
+                        )
+  
+})
+
+```
+
+### Tiles plot
+
+```{r}
+renderPlot({
+  
+  metrica::tiles_plot(data = data_set_reg(), obs = obs, pred=pred, 
+                      print_metrics = ifelse(is.null(input$metrics_choice), FALSE, TRUE),
+                      metrics_list = chosen_metrics(),
+                      orientation = chosen_orientation(),
+                      colors = c(low = "pink", high = "steelblue"))
+  
+})
+
+```
+
+Column {data-width=160}
+-----------------------------------------------------------------------
+
+### Density plot
+
+```{r}
+renderPlot({
+    metrica::density_plot(data = data_set_reg(), obs = obs, pred=pred, 
+                        print_metrics = ifelse(is.null(input$metrics_choice), FALSE, TRUE),
+                        metrics_list = chosen_metrics(),
+                        orientation = chosen_orientation(),
+                        colors = c(low = "white", high = "steelblue"))
+  })
+```
+
+### Bland-Altman plot
+
+```{r}
+renderPlot({
+  
+  metrica::bland_altman_plot(data = data_set_reg(), obs = obs, pred=pred)
+  
+})
+```
+
+Column {data-width=140}
+-----------------------------------------------------------------------
+
+### Metrics summary
+
+```{r}
+
+reg_summary <-reactive({metrics_summary(data = data_set_reg(), 
+                                obs = obs, pred = pred, 
+                                type = "regression") %>% 
+                  dplyr::mutate(Score = round(Score, 3))})
+
+output$regression_dl <- downloadHandler( filename = "regressiondl.csv", content = function(file) {write.csv(reg_summary(),file=file)})
+
+shiny::sidebarPanel( width = 18, 
+              renderUI({downloadButton("regression_dl", label = "Download this table", class = NULL)}),
+              tags$hr(),
+              DT::renderDataTable(
+               reg_summary(),
+                options = list(pageLength = 12)  ) )
+
+```
+
+Classification {data-orientation=columns}
+===================================== 
+
+Column {data-width=120}
+-----------------------------------------------------------------------
+Learn more about [Classification metrics](https://adriancorrendo.github.io/metrica/articles/available_metrics_classification.html).
+
+```{r}
+# LOAD DATASETS ----
+binary <- metrica::land_cover
+multiclass <- metrica::maize_phenology
+
+data_list_class = list("Land Cover" = binary,
+                       "Maize Phenology" = multiclass)
+
+chosen_data_class <- reactive({ data_list_class %>% purrr::pluck(input$dataset_choice_class) })
+
+# Metrics
+
+metrics_list_class = list("accuracy", "error_rate", "precision","recall","specificity",
+                          "balacc","fscore","agf","gmean", "khat",
+                          "mcc", "fmi", "bmi", "csi", "deltap", 
+                          "posLr", "negLr", "dor", "npv", "FPR", 
+                          "FNR", "FDR", "FOR", "preval", "preval_t",
+                          "AUC_roc")
+
+# Reactive metrics
+chosen_metrics_class <- reactive( { as.list(input$metrics_choice_class) } )
+
+```
+
+### <b><font size="5em" color="black"> Inputs </font></b>
+
+```{r inputPanel_class, echo=FALSE}
+sidebarPanel(
+                width = 3.5,
+                h5("Select Data"),
+                # Example datasets
+                shiny::selectInput(
+                    inputId = "dataset_choice_class",
+                    label   = "Choose an example dataset",
+                    choices = c("Land Cover", "Maize Phenology")
+                ),
+
+                # Load user data
+                p("Or upload your data:"),
+                shiny::fileInput(inputId = "file_class",
+                                 label = "actual = observed, predicted = predicted",
+                                 multiple = FALSE, #only 1 file at a time
+                                 accept = c("text/csv",
+                                            "text/comma-separated-values,text/plain",
+                                            ".csv",
+                                            ".xls",
+                                            ".xlsx"),     
+                                 placeholder = "*.csv | *.xls | *.xlsx"),
+                tags$hr(),
+                h5("Print Metrics"),
+                # Metrics choice
+                shiny::checkboxGroupInput(
+                    inputId = "metrics_choice_class",
+                    label   = "Select metrics",
+                    choices = metrics_list_class,
+                    selected = c("accuracy", "precision", "recall", "specificity"),
+                    inline = TRUE
+                    
+                ),
+                tags$hr()
+                )
+```
+
+```{r}
+# Data
+
+data_set_class <- reactive({
+  
+  inFile_class <- input$file_class
+
+# IF DATA IS NOT LOADED, USE EXAMPLE DATASETS
+  if (is.null( inFile_class )) { return( data_list_class %>% purrr::pluck(input$dataset_choice_class) )   }
+  
+# READING THE FILE WHEN THE USER UPLOADS A CSV / XLS / XLSX
+  if (is.element("datapath", names(input$file_class))) {
+    #read.csv(input$file$datapath, sep = ",", header = T)
+    extension <- tools::file_ext(inFile_class$name)
+      filepath <- inFile_class$datapath
+      data_set_class <- switch(extension, 
+                         csv = readr::read_csv(filepath),
+                         xls = readxl::read_xls(filepath),
+                         xlsx = readxl::read_xlsx(filepath) )
+    
+  }
+ 
+})
+
+```
+
+Column {data-width=345}
+-----------------------------------------------------------------------
+
+### Confusion matrix
+
+```{r}
+renderPlot({ 
+metrica::confusion_matrix(data = data_set_class(), 
+                           obs = actual, pred = predicted, 
+                           plot = TRUE, 
+                           colors = c(low="grey95" , high="steelblue"), 
+                           unit = "count", 
+                          print_metrics = ifelse(is.null(input$metrics_choice_class), FALSE, TRUE),
+                          metrics_list = chosen_metrics_class())+
+    theme(plot.subtitle=element_text(size=20, hjust=0, face = "bold", color="grey25"), axis.title=element_text(size=16), axis.text=element_text(size=16), legend.title=element_text(size=16), legend.text=element_text(size=16))
+})
+
+```
+
+Column {data-width=150}
+-----------------------------------------------------------------------
+
+### Metrics summary
+
+```{r}
+
+class_summary <-reactive({metrics_summary(data = data_set_class(), 
+                                obs = actual, pred = predicted, 
+                                type = "classification") %>% 
+                  dplyr::mutate(Score = round(Score, 3))})
+output$classification_dl <- downloadHandler( filename = "classificationdl.csv", content = function(file) {write.csv(class_summary(),file=file)})
+
+shiny::sidebarPanel( width = 15, 
+              renderUI({downloadButton("classification_dl", label = "Download this table", class = NULL)}),
+              tags$hr(),       
+              DT::renderDataTable(
+                class_summary(),
+                options = list(pageLength = 12)  ) )
+
+```
+
+...data {data-orientation=columns}
+===================================== 
+
+Column {data-width=180}
+-----------------------------------------------------------------------
+
+### Regression data
+
+```{r}
+shiny::sidebarPanel( width = 10, 
+              DT::renderDataTable(
+                data_set_reg(),
+                options = list(pageLength = 12)  ) )
+
+```
+
+Column {data-width=180}
+-----------------------------------------------------------------------
+
+### Classification data
+
+```{r}
+
+shiny::sidebarPanel( width = 10, 
+              DT::renderDataTable(
+                data_set_class(),
+                options = list(pageLength = 12)  ) )
+
+```
+
+About {data-orientation=columns}
+=====================================
+
+Column {data-width=40}
+-----------------------------------------------------------------------
+
+<a href = "https://adriancorrendo.github.io/metrica/"><img src = "metrica_logo.png" height = 140 width = 120></a>
+
+<a href = "https://ciampittilab.wixsite.com/ciampitti-lab"><img src = "logo_ciampitti.png" height = 120 width = 120></a>
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+
+```{r}
+
+mainPanel(
+            h1("Description"),
+            p("Translating scientific knowledge into practical tools is one of the 
+              core missions we pursue at",
+              a("CiampittiLab",
+                href = "https://ciampittilab.wixsite.com/ciampitti-lab"), 
+              ". The metrica webtool is intended as a demonstration of the functionalities of the metrica R-package. metrica is a compilation of more than 80 functions designed to quantitatively and visually evaluate the prediction performance of regression (continuous variables) and classification (categorical variables) point-forecast models (e.g. APSIM, DSSAT, DNDC, Supervised Machine Learning)."),
+            p("metrica offers a toolbox with a wide spectrum of goodness of fit, error metrics, indices, and coefficients accounting for different aspects of the agreement between predicted and observed values, plus some basic visualization functions to assess models performance (e.g. confusion matrix, scatter with regression line; Bland-Altman plot) provided in customizable format (ggplot)."),
+            p(" For supervised models, always keep in mind the concept of “cross-validation” since predicted values should ideally come from out-of-bag samples (unseen by training sets) to avoid overestimation of the prediction performance."),
+            tags$hr(),
+            h2("Citation"),
+            p("Correndo A, Moro Rosso L, Schwalbert R, Hernandez C, Bastos L, Nieto L, Holzworth D, Ciampitti I (2022). metrica: Prediction Performance Metrics. R package version 2.0.0, https://adriancorrendo.github.io/metrica/",
+              a("https://doi.org/10.5281/zenodo.6474101",
+                href = "https://doi.org/10.5281/zenodo.6474101")),
+            h3("Credits"),
+            p("This application was designed by Adrian Correndo using shiny."),
+            p("Chang et al. (2021). _shiny: Web  Application Framework for R_. R package version 1.7.1,",
+              a("<https://CRAN.R-project.org/package=shiny>", 
+                href = "https://CRAN.R-project.org/package=shiny"))
+            
+            
+        )
+```
+
